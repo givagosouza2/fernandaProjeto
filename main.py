@@ -33,7 +33,7 @@ bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
 # Janelas dos picos de aceleração
-peak_window_seconds = 2.0  # 2 segundos
+peak_window_seconds = 1.0  # 2 segundos
 
 
 # -----------------------------
