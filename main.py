@@ -11,10 +11,10 @@ from sklearn.cluster import KMeans
 # -----------------------------
 # Config
 # -----------------------------
-st.set_page_config(page_title="IMU Markov + Picos Acel (início e fim)", layout="wide")
+st.set_page_config(page_title="IMU Markov + Picos (giro/acel)", layout="wide")
 st.title(
     "📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim → "
-    "1º pico acel (início→início+2s) e 1º pico acel (fim−2s→fim)"
+    "picos acel (0–2s e −2–0s) + 2 maiores picos do giroscópio"
 )
 
 fs_target = 100.0
@@ -32,8 +32,8 @@ bs_start_t1 = 5.0   # até 5s
 bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
-# Janela dos picos
-peak_window_seconds = 1.5  # 2 segundos
+# Janelas dos picos de aceleração
+peak_window_seconds = 2.0  # 2 segundos
 
 
 # -----------------------------
@@ -184,6 +184,39 @@ def first_local_peak_in_window(y: np.ndarray, idx0: int, idx1: int, fs: float, m
     return peak_idx, float(y[peak_idx]), False
 
 
+def two_largest_peaks(y: np.ndarray, t: np.ndarray, fs: float, min_dist_s: float, prom_mult: float):
+    """
+    Encontra os DOIS maiores picos locais de y.
+    Retorna lista de dicts: [{"idx","t","val","prom"}, ...] ordenada por val desc.
+    Se houver <2 picos, retorna os que existirem.
+    """
+    min_distance = max(1, int(min_dist_s * fs))
+    local_std = float(np.std(y)) if len(y) > 3 else 0.0
+    min_prominence = max(prom_mult * local_std, 1e-9)
+
+    peaks, props = find_peaks(y, distance=min_distance, prominence=min_prominence)
+    if len(peaks) == 0:
+        return []
+
+    vals = y[peaks]
+    order = np.argsort(vals)[::-1]  # maior -> menor
+    top = order[:2]
+
+    out = []
+    for j in top:
+        p = int(peaks[j])
+        out.append(
+            {
+                "idx": p,
+                "t": float(t[p]),
+                "val": float(y[p]),
+                "prom": float(props["prominences"][j]) if "prominences" in props else np.nan,
+            }
+        )
+    out.sort(key=lambda d: d["val"], reverse=True)
+    return out
+
+
 # -----------------------------
 # UI
 # -----------------------------
@@ -191,9 +224,13 @@ st.sidebar.header("Parâmetros")
 
 seed = st.sidebar.number_input("Seed (K-means)", min_value=0, max_value=999999, value=42, step=1)
 
-# Critérios do pico local (valem para início e fim)
+# Critérios picos de aceleração (janelas)
 min_peak_distance_s = st.sidebar.slider("Distância mínima entre picos (s)", 0.02, 1.00, 0.20, 0.02)
-prom_mult = st.sidebar.slider("Proeminência mínima (multiplicador do desvio-padrão da janela)", 0.0, 3.0, 0.3, 0.1)
+prom_mult = st.sidebar.slider("Proeminência mínima (mult. do desvio-padrão da janela/sinal)", 0.0, 3.0, 0.3, 0.1)
+
+# Critérios picos do giroscópio (global)
+gyro_min_peak_distance_s = st.sidebar.slider("Giro: distância mínima entre picos (s)", 0.05, 2.00, 0.50, 0.05)
+gyro_prom_mult = st.sidebar.slider("Giro: proeminência mínima (mult. do desvio-padrão do sinal)", 0.0, 3.0, 0.3, 0.1)
 
 c1, c2 = st.columns(2)
 with c1:
@@ -300,8 +337,7 @@ if run:
     end_idx = None if end_idx_rev is None else (i_be1 - end_idx_rev)
     end_t = None if end_idx is None else float(t_gyr_u[end_idx])
 
-    # Definição do "fim do teste" para o pico final:
-    # se end_idx foi detectado, use esse; senão, use o fim do registro.
+    # Definição do "fim do teste" para métricas finais:
     if end_idx is not None:
         test_end_t = float(t_gyr_u[end_idx])
         test_end_idx = int(end_idx)
@@ -310,9 +346,8 @@ if run:
         test_end_idx = len(t_gyr_u) - 1
 
     # -----------------------------
-    # Picos da norma da aceleração
+    # Picos da norma da aceleração (opcional: mantidos)
     # -----------------------------
-    # Alinhar aceleração no tempo do gyro
     acc_norm_on_gyr = np.interp(t_gyr_u, t_acc_u, acc_norm)
 
     # (A) 1º pico local entre início e início+2s
@@ -345,7 +380,7 @@ if run:
 
     idx0_end = int(np.searchsorted(t_gyr_u, end_win0_t, side="left"))
     idx1_end = int(np.searchsorted(t_gyr_u, end_win1_t, side="right")) - 1
-    idx1_end = min(idx1_end, test_end_idx)  # garante não passar do fim do teste
+    idx1_end = min(idx1_end, test_end_idx)
 
     peak_end_idx, peak_end_val, used_fallback_end = first_local_peak_in_window(
         acc_norm_on_gyr, idx0_end, idx1_end, fs_target, min_peak_distance_s, prom_mult
@@ -354,42 +389,56 @@ if run:
         peak_end_t = float(t_gyr_u[peak_end_idx])
 
     # -----------------------------
+    # DOIS MAIORES PICOS na norma do GIROSCÓPIO
+    # (aqui uso gyr_norm filtrado (LP 1.5 Hz) e o tempo t_gyr_u)
+    # -----------------------------
+    gyro_top2 = two_largest_peaks(
+        y=gyr_norm,
+        t=t_gyr_u,
+        fs=fs_target,
+        min_dist_s=gyro_min_peak_distance_s,
+        prom_mult=gyro_prom_mult,
+    )
+
+    # -----------------------------
     # Painel de resultados
     # -----------------------------
-    a, b, c, d = st.columns(4)
+    st.subheader("🏔️ Dois maiores picos da norma do giroscópio (||giro|| filtrado)")
+    if len(gyro_top2) == 0:
+        st.warning("Não encontrei picos na norma do giroscópio com os critérios atuais.")
+    else:
+        gyro_df = pd.DataFrame(
+            {
+                "rank": np.arange(1, len(gyro_top2) + 1),
+                "tempo_s": [p["t"] for p in gyro_top2],
+                "valor_norma": [p["val"] for p in gyro_top2],
+                "proeminencia": [p["prom"] for p in gyro_top2],
+            }
+        )
+        st.dataframe(gyro_df, use_container_width=True)
 
+    # Resumo de início/fim e picos acel (mantidos)
+    a, b, c, d = st.columns(4)
     with a:
         st.subheader("📌 Início")
         st.write(f"Baseline início (2–5s): **estado {baseline_state_start}**")
-        st.write(f"Início detectado: **{start_t:.3f}s**" if start_t is not None else "Início detectado: **não encontrado**")
-
+        st.write(f"Início detectado: **{start_t:.3f}s**" if start_t is not None else "Início: **não encontrado**")
     with b:
         st.subheader("📌 Fim")
         st.write(f"Baseline final (fim−4 a fim−2): **estado {baseline_state_end}**")
-        st.write(f"Fim detectado: **{end_t:.3f}s**" if end_t is not None else "Fim detectado: **não encontrado**")
-        st.caption(f"Fim do teste usado p/ pico final: {test_end_t:.3f}s")
-
+        st.write(f"Fim detectado: **{end_t:.3f}s**" if end_t is not None else "Fim: **não encontrado**")
     with c:
-        st.subheader("🏔️ 1º pico acel (início→+2s)")
+        st.subheader("🏔️ pico acel (0–2s)")
         if peak_start_t is None or start_t is None:
-            st.write("Pico: **não encontrado**")
+            st.write("—")
         else:
-            st.write(f"Janela: **{start_win0_t:.3f}s → {start_win1_t:.3f}s**")
-            st.write(f"Pico em: **{peak_start_t:.3f}s** | Δt vs início = **{(peak_start_t - start_t):.3f}s**")
-            st.write(f"Valor: **{peak_start_val:.6f}**")
-            if used_fallback_start:
-                st.caption("Obs.: sem pico local com critérios; usei o máximo da janela como fallback.")
-
+            st.write(f"{peak_start_t:.3f}s | val={peak_start_val:.4f}")
     with d:
-        st.subheader("🏔️ 1º pico acel (fim−2s→fim)")
+        st.subheader("🏔️ pico acel (−2–0s)")
         if peak_end_t is None:
-            st.write("Pico: **não encontrado**")
+            st.write("—")
         else:
-            st.write(f"Janela: **{end_win0_t:.3f}s → {end_win1_t:.3f}s**")
-            st.write(f"Pico em: **{peak_end_t:.3f}s** | Δt vs fim = **{(end_win1_t - peak_end_t):.3f}s antes do fim**")
-            st.write(f"Valor: **{peak_end_val:.6f}**")
-            if used_fallback_end:
-                st.caption("Obs.: sem pico local com critérios; usei o máximo da janela como fallback.")
+            st.write(f"{peak_end_t:.3f}s | val={peak_end_val:.4f}")
 
     st.subheader("📊 Centroides (ordenados) do K-means na norma do giro")
     centers_df = pd.DataFrame({"estado_ordenado": np.arange(k_states), "centroide_norma_giro": centers_ord})
@@ -398,7 +447,7 @@ if run:
     # -----------------------------
     # Plot
     # -----------------------------
-    st.subheader("📈 Normas com marcações (início, fim, janelas e picos)")
+    st.subheader("📈 Normas + marcações (início, fim, picos acel, top-2 picos do giro)")
     fig, ax = plt.subplots(figsize=(12, 5))
 
     ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
@@ -406,7 +455,7 @@ if run:
 
     # Baselines
     ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-    ax.axvspan(tb0, tb1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+    ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
 
     # Início/Fim
     if start_t is not None:
@@ -414,19 +463,24 @@ if run:
     if end_t is not None:
         ax.axvline(end_t, linestyle="--", linewidth=2, label=f"Fim @ {end_t:.3f}s")
 
-    # Janelas dos picos
-    if start_win0_t is not None and start_win1_t is not None:
-        ax.axvspan(start_win0_t, start_win1_t, alpha=0.10, label="janela pico início (0–2s)")
-    ax.axvspan(end_win0_t, end_win1_t, alpha=0.10, label="janela pico final (−2–0s)")
+    # Janelas dos picos de aceleração
+    if start_t is not None:
+        ax.axvspan(start_t, start_t + peak_window_seconds, alpha=0.10, label="janela pico acel início (0–2s)")
+    ax.axvspan(max(0.0, test_end_t - peak_window_seconds), test_end_t, alpha=0.10, label="janela pico acel final (−2–0s)")
 
-    # Picos
+    # Picos acel
     if peak_start_t is not None:
-        ax.axvline(peak_start_t, linestyle=":", linewidth=2, label=f"1º pico início @ {peak_start_t:.3f}s")
+        ax.axvline(peak_start_t, linestyle=":", linewidth=2, label=f"pico acel início @ {peak_start_t:.3f}s")
         ax.plot(peak_start_t, peak_start_val, "o", markersize=7)
 
     if peak_end_t is not None:
-        ax.axvline(peak_end_t, linestyle=":", linewidth=2, label=f"1º pico final @ {peak_end_t:.3f}s")
+        ax.axvline(peak_end_t, linestyle=":", linewidth=2, label=f"pico acel final @ {peak_end_t:.3f}s")
         ax.plot(peak_end_t, peak_end_val, "o", markersize=7)
+
+    # Top-2 picos do giro
+    for i, p in enumerate(gyro_top2, start=1):
+        ax.axvline(p["t"], linestyle="-.", linewidth=2, label=f"top{i} pico giro @ {p['t']:.3f}s")
+        ax.plot(p["t"], p["val"], "s", markersize=7)
 
     ax.set_xlabel("Tempo (s)")
     ax.set_ylabel("Norma")
@@ -439,7 +493,7 @@ if run:
             {
                 "t_s": t_gyr_u,
                 "gyr_norm": gyr_norm,
-                "acc_norm": acc_norm_on_gyr,
+                "acc_norm": np.interp(t_gyr_u, t_acc_u, acc_norm),
                 "state": states.astype(int),
             }
         )
