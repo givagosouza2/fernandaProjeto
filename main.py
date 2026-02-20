@@ -462,7 +462,7 @@ if run:
     ax.set_xlabel("Tempo (s)")
     ax.set_ylabel("Norma")
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    #ax.legend()
     st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
