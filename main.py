@@ -471,8 +471,8 @@ if run:
         ax.plot(t_gyr_u, acc_norm_on_gyr,'-k')
     
         # Baselines
-        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+        #ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
+        #ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
     
         # Início/Fim
         if start_t is not None:
@@ -496,11 +496,11 @@ if run:
         # G1/G2
         #if G1 is not None:
             #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            #ax.plot(G1["t"], G1["val"], "s", markersize=7)
+            ax.plot(G1["t"], G1["val"], "s", markersize=7)
     
         #if G2 is not None:
             #ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            #ax.plot(G2["t"], G2["val"], "s", markersize=7)
+            ax.plot(G2["t"], G2["val"], "s", markersize=7)
     
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
