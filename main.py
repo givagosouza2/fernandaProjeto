@@ -494,11 +494,11 @@ if run:
             #ax.plot(A2_t, A2_val, "o", markersize=7)
     
         # G1/G2
-        #if G1 is not None:
+        if G1 is not None:
             #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
             ax.plot(G1["t"], G1["val"], "s", markersize=7)
     
-        #if G2 is not None:
+        if G2 is not None:
             #ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
             ax.plot(G2["t"], G2["val"], "s", markersize=7)
     
