@@ -16,7 +16,7 @@ st.title("📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → 
 
 fs_target = 100.0
 fc_acc = 4
-fc_gyro = 1.5
+fc_gyro = 2
 k_states = 7
 
 n_baseline = 15
