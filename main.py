@@ -24,7 +24,7 @@ k_states = 7
 
 # Regra Markov
 n_baseline = 5
-n_after = 25
+n_after = 40
 
 # Baselines (definição do usuário)
 bs_start_t0 = 2  # baseline início: 2s
