@@ -14,25 +14,26 @@ from sklearn.cluster import KMeans
 st.set_page_config(page_title="IMU Markov + Métricas (A1/A2/G1/G2)", layout="wide")
 st.title(
     "📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim → "
-    "A1 (início→+2s), A2 (fim−2s→fim), G1/G2 (2 maiores picos do giro por ordem temporal) + tabela"
+    "A1=max(||acel||) em (início→início+2s), A2=max(||acel||) em (fim−2s→fim), "
+    "G1/G2=2 maiores picos do giro (por amplitude) rotulados por ordem temporal + tabela"
 )
 
 fs_target = 100.0
-fc_acc = 4
-fc_gyro = 2.5
+fc_acc = 8.0
+fc_gyro = 1.5
 k_states = 7
 
 # Regra Markov
 n_baseline = 15
 n_after = 5
 
-# Baselines
+# Baselines (definição do usuário)
 bs_start_t0 = 2.0   # baseline início: 2s
 bs_start_t1 = 5.0   # até 5s
 bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
-# Janelas dos picos de aceleração
+# Janelas dos picos de aceleração (A1 e A2)
 peak_window_seconds = 1.5  # 2 segundos
 
 
@@ -145,33 +146,6 @@ def last_index_leq(t: np.ndarray, value: float) -> int:
     return int(np.searchsorted(t, value, side="right") - 1)
 
 
-def first_local_peak_in_window(y: np.ndarray, idx0: int, idx1: int, fs: float, min_dist_s: float, prom_mult: float):
-    """
-    Retorna (peak_idx, peak_val, used_fallback_max: bool)
-    Procura o PRIMEIRO pico local em y[idx0:idx1+1]. Se não encontrar, retorna o máximo da janela.
-    """
-    idx0 = int(max(0, idx0))
-    idx1 = int(min(len(y) - 1, idx1))
-    if idx0 >= idx1:
-        return None, None, False
-
-    seg = y[idx0:idx1 + 1]
-
-    min_distance = max(1, int(min_dist_s * fs))
-    local_std = float(np.std(seg)) if len(seg) > 3 else 0.0
-    min_prominence = max(prom_mult * local_std, 1e-9)
-
-    peaks, _ = find_peaks(seg, distance=min_distance, prominence=min_prominence)
-
-    if len(peaks) == 0:
-        rel = int(np.argmax(seg))
-        peak_idx = idx0 + rel
-        return peak_idx, float(y[peak_idx]), True
-
-    peak_idx = idx0 + int(peaks[0])
-    return peak_idx, float(y[peak_idx]), False
-
-
 def two_largest_peaks_global(y: np.ndarray, t: np.ndarray, fs: float, min_dist_s: float, prom_mult: float):
     """
     Encontra os DOIS maiores picos locais de y (por amplitude).
@@ -204,16 +178,24 @@ def two_largest_peaks_global(y: np.ndarray, t: np.ndarray, fs: float, min_dist_s
     return out
 
 
+def window_max(y: np.ndarray, idx0: int, idx1: int):
+    """Retorna (idx_max, val_max) do máximo em y[idx0:idx1+1]."""
+    idx0 = int(max(0, idx0))
+    idx1 = int(min(len(y) - 1, idx1))
+    if idx0 > idx1:
+        return None, None
+    seg = y[idx0:idx1 + 1]
+    rel = int(np.argmax(seg))
+    idx = idx0 + rel
+    return idx, float(y[idx])
+
+
 # -----------------------------
 # UI
 # -----------------------------
 st.sidebar.header("Parâmetros")
 
 seed = st.sidebar.number_input("Seed (K-means)", min_value=0, max_value=999999, value=42, step=1)
-
-# Picos acel (janelas)
-min_peak_distance_s = st.sidebar.slider("Acel: distância mínima entre picos (s)", 0.02, 1.00, 0.20, 0.02)
-prom_mult = st.sidebar.slider("Acel: proeminência mínima (mult. do desvio-padrão da janela)", 0.0, 3.0, 0.3, 0.1)
 
 # Picos do giro (global, pega os 2 maiores por amplitude)
 gyro_min_peak_distance_s = st.sidebar.slider("Giro: distância mínima entre picos (s)", 0.05, 2.00, 0.50, 0.05)
@@ -324,7 +306,7 @@ if run:
     end_idx = None if end_idx_rev is None else (i_be1 - end_idx_rev)
     end_t = None if end_idx is None else float(t_gyr_u[end_idx])
 
-    # Fim do teste para métricas finais
+    # Fim do teste (para métricas): se detectou end_idx, usa ele; senão, usa fim do registro
     if end_idx is not None:
         test_end_t = float(t_gyr_u[end_idx])
         test_end_idx = int(end_idx)
@@ -333,34 +315,30 @@ if run:
         test_end_idx = len(t_gyr_u) - 1
 
     # -----------------------------
-    # Picos da norma da aceleração (A1 e A2)
+    # A1 e A2 como MÁXIMO da norma de aceleração nas janelas
     # -----------------------------
+    # alinhar aceleração no tempo do gyro
     acc_norm_on_gyr = np.interp(t_gyr_u, t_acc_u, acc_norm)
 
-    # A1: 1º pico local entre início e início+2s
+    # Janela A1: início → início+2s
     A1_idx = A1_t = A1_val = None
     A1_win0_t = A1_win1_t = None
-    used_fallback_A1 = False
 
     if start_idx is None:
         st.warning("Não foi possível achar A1: início do teste não foi detectado.")
     else:
         A1_win0_t = float(t_gyr_u[start_idx])
         A1_win1_t = float(A1_win0_t + peak_window_seconds)
+
         idx0 = int(np.searchsorted(t_gyr_u, A1_win0_t, side="left"))
         idx1 = int(np.searchsorted(t_gyr_u, A1_win1_t, side="right")) - 1
 
-        A1_idx, A1_val, used_fallback_A1 = first_local_peak_in_window(
-            acc_norm_on_gyr, idx0, idx1, fs_target, min_peak_distance_s, prom_mult
-        )
+        A1_idx, A1_val = window_max(acc_norm_on_gyr, idx0, idx1)
         if A1_idx is not None:
             A1_t = float(t_gyr_u[A1_idx])
 
-    # A2: 1º pico local entre (fim−2s) e fim do teste
+    # Janela A2: (fim−2s) → fim do teste
     A2_idx = A2_t = A2_val = None
-    A2_win0_t = A2_win1_t = None
-    used_fallback_A2 = False
-
     A2_win1_t = test_end_t
     A2_win0_t = max(0.0, float(test_end_t - peak_window_seconds))
 
@@ -368,15 +346,13 @@ if run:
     idx1 = int(np.searchsorted(t_gyr_u, A2_win1_t, side="right")) - 1
     idx1 = min(idx1, test_end_idx)
 
-    A2_idx, A2_val, used_fallback_A2 = first_local_peak_in_window(
-        acc_norm_on_gyr, idx0, idx1, fs_target, min_peak_distance_s, prom_mult
-    )
+    A2_idx, A2_val = window_max(acc_norm_on_gyr, idx0, idx1)
     if A2_idx is not None:
         A2_t = float(t_gyr_u[A2_idx])
 
     # -----------------------------
-    # Picos da norma do giroscópio: dois maiores por amplitude -> depois rotular por ordem temporal
-    # G1 = o que ocorre primeiro no tempo; G2 = o que ocorre por último no tempo
+    # Picos do giroscópio: dois maiores por amplitude -> rotular por ordem temporal
+    # G1 = o que ocorre primeiro; G2 = o que ocorre por último
     # -----------------------------
     gyro_top2_amp = two_largest_peaks_global(
         y=gyr_norm,
@@ -388,17 +364,14 @@ if run:
 
     G1 = G2 = None
     if len(gyro_top2_amp) >= 2:
-        # ordenar por tempo
         g_sorted = sorted(gyro_top2_amp[:2], key=lambda d: d["t"])
         G1, G2 = g_sorted[0], g_sorted[1]
     elif len(gyro_top2_amp) == 1:
         G1 = gyro_top2_amp[0]
-        G2 = None
 
     # -----------------------------
-    # TABELA de métricas solicitadas
+    # Métricas solicitadas (tabela)
     # -----------------------------
-    # Durações (s)
     dur_mov = None
     dur_levantar = None
     dur_ida = None
@@ -429,19 +402,16 @@ if run:
         "G2_t_s": (None if G2 is None else G2["t"]),
         "Duração do movimento (fim - início) [s]": dur_mov,
         "Duração para levantar (A1 - início) [s]": dur_levantar,
-        "Duração caminhada ida (G1 - A1) [s]": dur_ida,
-        "Duração caminhada volta (G2 - G1) [s]": dur_volta,
+        "Duração da caminhada de ida (G1 - A1) [s]": dur_ida,
+        "Duração da caminhada de volta (G2 - G1) [s]": dur_volta,
         "Duração para sentar (fim - A2) [s]": dur_sentar,
-        "Amplitude A1 (||acel|| em A1)": A1_val,
-        "Amplitude A2 (||acel|| em A2)": A2_val,
+        "Amplitude A1 (||acel|| max na janela início)": A1_val,
+        "Amplitude A2 (||acel|| max na janela final)": A2_val,
         "Amplitude G1 (||giro|| em G1)": (None if G1 is None else G1["val"]),
         "Amplitude G2 (||giro|| em G2)": (None if G2 is None else G2["val"]),
     }
     metrics_df = pd.DataFrame([metrics])
 
-    # -----------------------------
-    # Exibir tabela e permitir download
-    # -----------------------------
     st.subheader("📋 Tabela de métricas (A1, A2, G1, G2)")
     st.dataframe(metrics_df, use_container_width=True)
 
@@ -473,11 +443,11 @@ if run:
 
     # A1/A2
     if A1_t is not None:
-        ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 @ {A1_t:.3f}s")
+        ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
         ax.plot(A1_t, A1_val, "o", markersize=7)
 
     if A2_t is not None:
-        ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 @ {A2_t:.3f}s")
+        ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
         ax.plot(A2_t, A2_val, "o", markersize=7)
 
     # G1/G2
