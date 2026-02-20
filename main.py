@@ -30,7 +30,7 @@ bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
 # Pico acel: procurar entre início e (início + 2s)
-peak_window_seconds = 3
+peak_window_seconds = 1.5
 
 
 # -----------------------------
