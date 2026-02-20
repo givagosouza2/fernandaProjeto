@@ -31,7 +31,7 @@ bs_end_back0 = 4.0
 bs_end_back1 = 2.0
 
 # Pico acel: após 2s do início do teste
-peak_after_start_seconds = 1.5
+peak_after_start_seconds = 1
 
 
 # -----------------------------
