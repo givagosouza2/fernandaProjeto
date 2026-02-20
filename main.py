@@ -15,7 +15,7 @@ st.set_page_config(page_title="IMU Markov Segmentação", layout="wide")
 st.title("📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim")
 
 fs_target = 100.0
-fc_acc = 8.0
+fc_acc = 4
 fc_gyro = 1.5
 k_states = 7
 
