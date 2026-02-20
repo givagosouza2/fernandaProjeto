@@ -240,7 +240,7 @@ if run:
     with col2:
         fig,ax=plt.subplots(figsize=(12,5))
         #ax.plot(t_gyr_u,gyr_norm,label="||giro||")
-        ax.plot(t_gyr_u,acc_norm,label="||acel||")
+        ax.plot(t_gyr_u,acc_norm,'-k')
     
         ax.axvline(start,color="green",label="Início ajustado")
         ax.axvline(end,color="red",label="Fim ajustado")
@@ -251,8 +251,6 @@ if run:
         #if G1: ax.axvline(G1["t"],color="black",linestyle="-.")
         #if G2: ax.axvline(G2["t"],color="black",linestyle="-.")
     
-        ax.legend()
-        ax.grid()
         st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
