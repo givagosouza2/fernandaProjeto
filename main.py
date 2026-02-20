@@ -1,4 +1,3 @@
-
 # app.py
 import streamlit as st
 import numpy as np
@@ -14,7 +13,9 @@ from sklearn.cluster import KMeans
 # -----------------------------
 st.set_page_config(page_title="IMU Markov + Métricas (A1/A2/G1/G2)", layout="wide")
 st.title(
-    "Análise Fernanda"
+    "📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim → "
+    "A1=max(||acel||) em (início→início+2s), A2=max(||acel||) em (fim−2s→fim), "
+    "G1/G2=2 maiores picos do giro (por amplitude) rotulados por ordem temporal + tabela + ajuste manual Δ"
 )
 
 fs_target = 100.0
@@ -27,13 +28,13 @@ n_baseline = 15
 n_after = 5
 
 # Baselines (definição do usuário)
-bs_start_t0 = 2  # baseline início: 2s
-bs_start_t1 = 5   # até 5s
-bs_end_back0 = 7 # baseline final: fim-4s
-bs_end_back1 = 6  # até fim-2s
+bs_start_t0 = 2.0   # baseline início: 2s
+bs_start_t1 = 5.0   # até 5s
+bs_end_back0 = 4.0  # baseline final: fim-4s
+bs_end_back1 = 2.0  # até fim-2s
 
 # Janelas dos picos de aceleração (A1 e A2)
-peak_window_seconds = 1.25  # 2 segundos
+peak_window_seconds = 2.0  # 2 segundos
 
 
 # -----------------------------
@@ -189,6 +190,10 @@ def window_max(y: np.ndarray, idx0: int, idx1: int):
     return idx, float(y[idx])
 
 
+def clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
 # -----------------------------
 # UI
 # -----------------------------
@@ -199,6 +204,24 @@ seed = st.sidebar.number_input("Seed (K-means)", min_value=0, max_value=999999, 
 # Picos do giro (global, pega os 2 maiores por amplitude)
 gyro_min_peak_distance_s = st.sidebar.slider("Giro: distância mínima entre picos (s)", 0.05, 2.00, 0.50, 0.05)
 gyro_prom_mult = st.sidebar.slider("Giro: proeminência mínima (mult. do desvio-padrão do sinal)", 0.0, 3.0, 0.3, 0.1)
+
+st.sidebar.subheader("🔧 Ajuste manual de início/fim (delta em segundos)")
+delta_start = st.sidebar.number_input(
+    "Δ início (s)",
+    min_value=-10.0,
+    max_value=10.0,
+    value=0.0,
+    step=0.1,
+    help="Valor somado ao início automático. Pode ser negativo."
+)
+delta_end = st.sidebar.number_input(
+    "Δ fim (s)",
+    min_value=-10.0,
+    max_value=10.0,
+    value=0.0,
+    step=0.1,
+    help="Valor somado ao fim automático (fim do teste). Pode ser negativo."
+)
 
 c1, c2 = st.columns(2)
 with c1:
@@ -259,7 +282,7 @@ if run:
     states, centers_ord = ordered_states_from_kmeans(gyr_norm, k_states, int(seed))
 
     # -----------------------------
-    # Início: baseline 2–5s e leitura começa em 2s
+    # Início automático: baseline 2–5s e leitura começa em 2s
     # -----------------------------
     i_bs0 = first_index_geq(t_gyr_u, bs_start_t0)
     i_bs1 = last_index_leq(t_gyr_u, bs_start_t1)
@@ -270,16 +293,16 @@ if run:
     else:
         baseline_state_start = mode_int(states[i_bs0:i_bs1 + 1])
 
-    start_idx = detect_transition_from(
+    start_idx_auto = detect_transition_from(
         states,
         baseline_state_start,
         start_idx=i_bs0 + n_baseline,
         end_idx=len(states),
     )
-    start_t = None if start_idx is None else float(t_gyr_u[start_idx])
+    start_t_auto = None if start_idx_auto is None else float(t_gyr_u[start_idx_auto])
 
     # -----------------------------
-    # Fim: baseline (fim−4 a fim−2) e leitura retrógrada começa em (fim−2)
+    # Fim automático: baseline (fim−4 a fim−2) e leitura retrógrada começa em (fim−2)
     # -----------------------------
     t_end_record = float(t_gyr_u[-1])
     tb0 = t_end_record - bs_end_back0
@@ -302,21 +325,44 @@ if run:
         start_idx=0 + n_baseline,
         end_idx=len(states_rev),
     )
-    end_idx = None if end_idx_rev is None else (i_be1 - end_idx_rev)
-    end_t = None if end_idx is None else float(t_gyr_u[end_idx])
+    end_idx_auto = None if end_idx_rev is None else (i_be1 - end_idx_rev)
+    end_t_auto = None if end_idx_auto is None else float(t_gyr_u[end_idx_auto])
 
-    # Fim do teste (para métricas): se detectou end_idx, usa ele; senão, usa fim do registro
-    if end_idx is not None:
-        test_end_t = float(t_gyr_u[end_idx])
-        test_end_idx = int(end_idx)
+    # Fim do teste automático: se detectou end_idx_auto, usa ele; senão, usa fim do registro
+    if end_idx_auto is not None:
+        test_end_t_auto = float(t_gyr_u[end_idx_auto])
+        test_end_idx_auto = int(end_idx_auto)
     else:
-        test_end_t = float(t_gyr_u[-1])
-        test_end_idx = len(t_gyr_u) - 1
+        test_end_t_auto = float(t_gyr_u[-1])
+        test_end_idx_auto = len(t_gyr_u) - 1
+
+    # -----------------------------
+    # APLICAR AJUSTE MANUAL (Δ)
+    # -----------------------------
+    start_idx = start_idx_auto
+    start_t = start_t_auto
+    test_end_t = test_end_t_auto
+    test_end_idx = test_end_idx_auto
+
+    if start_t_auto is not None:
+        start_t = clamp(start_t_auto + float(delta_start), 0.0, float(t_gyr_u[-1]))
+        start_idx = int(np.searchsorted(t_gyr_u, start_t, side="left"))
+
+    if test_end_t_auto is not None:
+        test_end_t = clamp(test_end_t_auto + float(delta_end), 0.0, float(t_gyr_u[-1]))
+        test_end_idx = int(np.searchsorted(t_gyr_u, test_end_t, side="left"))
+        test_end_idx = int(clamp(test_end_idx, 0, len(t_gyr_u) - 1))
+
+    # Garantia: início < fim (se inverter, corrige automaticamente)
+    if (start_t is not None) and (test_end_t is not None) and (start_t >= test_end_t):
+        st.error("Ajuste inválido: início ajustado ficou >= fim ajustado. Reajustei automaticamente.")
+        # volta para automático
+        start_idx, start_t = start_idx_auto, start_t_auto
+        test_end_idx, test_end_t = test_end_idx_auto, test_end_t_auto
 
     # -----------------------------
     # A1 e A2 como MÁXIMO da norma de aceleração nas janelas
     # -----------------------------
-    # alinhar aceleração no tempo do gyro
     acc_norm_on_gyr = np.interp(t_gyr_u, t_acc_u, acc_norm)
 
     # Janela A1: início → início+2s
@@ -338,7 +384,7 @@ if run:
 
     # Janela A2: (fim−2s) → fim do teste
     A2_idx = A2_t = A2_val = None
-    A2_win1_t = test_end_t
+    A2_win1_t = float(test_end_t)
     A2_win0_t = max(0.0, float(test_end_t - peak_window_seconds))
 
     idx0 = int(np.searchsorted(t_gyr_u, A2_win0_t, side="left"))
@@ -371,11 +417,7 @@ if run:
     # -----------------------------
     # Métricas solicitadas (tabela)
     # -----------------------------
-    dur_mov = None
-    dur_levantar = None
-    dur_ida = None
-    dur_volta = None
-    dur_sentar = None
+    dur_mov = dur_levantar = dur_ida = dur_volta = dur_sentar = None
 
     if (start_t is not None) and (test_end_t is not None):
         dur_mov = test_end_t - start_t
@@ -393,8 +435,12 @@ if run:
         dur_sentar = test_end_t - A2_t
 
     metrics = {
-        "inicio_teste_s": start_t,
-        "fim_teste_s": test_end_t,
+        "inicio_auto_s": start_t_auto,
+        "fim_auto_s": test_end_t_auto,
+        "delta_inicio_s": float(delta_start),
+        "delta_fim_s": float(delta_end),
+        "inicio_ajustado_s": start_t,
+        "fim_ajustado_s": test_end_t,
         "A1_t_s": A1_t,
         "A2_t_s": A2_t,
         "G1_t_s": (None if G1 is None else G1["t"]),
@@ -404,8 +450,8 @@ if run:
         "Duração da caminhada de ida (G1 - A1) [s]": dur_ida,
         "Duração da caminhada de volta (G2 - G1) [s]": dur_volta,
         "Duração para sentar (fim - A2) [s]": dur_sentar,
-        "Amplitude A1 (||acel|| max na janela início)": A1_val,
-        "Amplitude A2 (||acel|| max na janela final)": A2_val,
+        "Amplitude A1 (||acel|| max janela início)": A1_val,
+        "Amplitude A2 (||acel|| max janela final)": A2_val,
         "Amplitude G1 (||giro|| em G1)": (None if G1 is None else G1["val"]),
         "Amplitude G2 (||giro|| em G2)": (None if G2 is None else G2["val"]),
     }
@@ -420,91 +466,54 @@ if run:
     # -----------------------------
     # Plot
     # -----------------------------
-    st.subheader("📈 Normas + marcações (início/fim/A1/A2/G1/G2)")
-    col1, col2 = st.columns(2)
-    with col1:
-        fig, ax = plt.subplots(figsize=(12, 5))
-    
-        ax.plot(t_gyr_u, gyr_norm, '-k')
-    
-        # Baselines
-        #ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        #ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
-    
-        # Início/Fim
-        if start_t is not None:
-            ax.axvline(start_t, linestyle="--", linewidth=2, label=f"Início @ {start_t:.3f}s")
-        ax.axvline(test_end_t, linestyle="--", linewidth=2, label=f"Fim (teste) @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
-        #if A1_win0_t is not None and A1_win1_t is not None:
-            #ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (0–2s)")
-        #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
-    
-        # A1/A2
-        #if A1_t is not None:
-            #ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-            #ax.plot(A1_t, A1_val, "o", markersize=7)
-    
-        #if A2_t is not None:
-            #ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-            #ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
-        if G1 is not None:
-            #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
-        if G2 is not None:
-            #ax.axvline(G2["t"], linestyle="-", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
-        ax.set_xlabel("Tempo (s)")
-        ax.set_ylabel("Norma")
-        ax.grid(True, alpha=0.3)
-        #ax.legend()
-        st.pyplot(fig)
-    with col2:
-        fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(t_gyr_u, acc_norm_on_gyr,'-k')
-    
-        # Baselines
-        #ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        #ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
-    
-        # Início/Fim
-        if start_t is not None:
-            ax.axvline(start_t, linestyle="--", linewidth=2, label=f"Início @ {start_t:.3f}s")
-        ax.axvline(test_end_t, linestyle="--", linewidth=2, label=f"Fim (teste) @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
-        #if A1_win0_t is not None and A1_win1_t is not None:
-            #ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (0–2s)")
-        #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
-    
-        # A1/A2
-        if A1_t is not None:
-            #ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-            ax.plot(A1_t, A1_val, "o", markersize=7)
-    
-        if A2_t is not None:
-            #ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-            ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
-        #if G1 is not None:
-            #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            #ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
-        #if G2 is not None:
-            #ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            #ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
-        ax.set_xlabel("Tempo (s)")
-        ax.set_ylabel("Norma")
-        #ax.grid(True, alpha=0.3)
-        #ax.legend()
-        st.pyplot(fig)
+    st.subheader("📈 Normas + marcações (auto vs ajustado, A1/A2/G1/G2)")
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
+    ax.plot(t_gyr_u, acc_norm_on_gyr, label="||acel|| (LP 8 Hz) (alinhada no tempo do gyro)", alpha=0.8)
+
+    # Baselines
+    ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
+    ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+
+    # Auto
+    if start_t_auto is not None:
+        ax.axvline(start_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Início AUTO @ {start_t_auto:.3f}s")
+    ax.axvline(test_end_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Fim AUTO @ {test_end_t_auto:.3f}s")
+
+    # Ajustado
+    if start_t is not None:
+        ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
+    ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
+
+    # Janelas de A1 e A2
+    if A1_win0_t is not None and A1_win1_t is not None:
+        ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (0–2s)")
+    ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
+
+    # A1/A2
+    if A1_t is not None:
+        ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
+        ax.plot(A1_t, A1_val, "o", markersize=7)
+
+    if A2_t is not None:
+        ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
+        ax.plot(A2_t, A2_val, "o", markersize=7)
+
+    # G1/G2
+    if G1 is not None:
+        ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
+        ax.plot(G1["t"], G1["val"], "s", markersize=7)
+
+    if G2 is not None:
+        ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
+        ax.plot(G2["t"], G2["val"], "s", markersize=7)
+
+    ax.set_xlabel("Tempo (s)")
+    ax.set_ylabel("Norma")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
         out = pd.DataFrame(
