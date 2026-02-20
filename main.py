@@ -18,8 +18,8 @@ st.title(
 )
 
 fs_target = 100.0
-fc_acc = 8.0
-fc_gyro = 1.5
+fc_acc = 4
+fc_gyro = 2.5
 k_states = 7
 
 # Regra Markov
