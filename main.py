@@ -519,11 +519,11 @@ if run:
         fig, ax = plt.subplots(figsize=(12, 5))
     
         #ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
-        ax.plot(t_gyr_u, acc_norm_on_gyr, label="||acel|| (LP 8 Hz) (alinhada no tempo do gyro)", alpha=0.8)
+        ax.plot(t_gyr_u, acc_norm_on_gyr, '-k')
     
         # Baselines
-        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+        #ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
+        #ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
     
         # Auto
         if start_t_auto is not None:
