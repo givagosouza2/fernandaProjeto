@@ -29,8 +29,8 @@ n_baseline = 15
 n_after = 5
 
 # Baselines (definição do usuário)
-bs_start_t0 = 2.0   # baseline início: 2s
-bs_start_t1 = 5.0   # até 5s
+bs_start_t0 = 1.0   # baseline início: 2s
+bs_start_t1 = 3.0   # até 5s
 bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
