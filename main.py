@@ -453,13 +453,13 @@ if run:
             #ax.plot(A2_t, A2_val, "o", markersize=7)
     
         # G1/G2
-        #if G1 is not None:
+        if G1 is not None:
             #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            #ax.plot(G1["t"], G1["val"], "s", markersize=7)
+            ax.plot(G1["t"], G1["val"], "s", markersize=7)
     
-        #if G2 is not None:
+        if G2 is not None:
             #ax.axvline(G2["t"], linestyle="-", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            #ax.plot(G2["t"], G2["val"], "s", markersize=7)
+            ax.plot(G2["t"], G2["val"], "s", markersize=7)
     
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
@@ -485,22 +485,22 @@ if run:
         #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
     
         # A1/A2
-        #if A1_t is not None:
+        if A1_t is not None:
             #ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-            #ax.plot(A1_t, A1_val, "o", markersize=7)
+            ax.plot(A1_t, A1_val, "o", markersize=7)
     
-        #if A2_t is not None:
+        if A2_t is not None:
             #ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-            #ax.plot(A2_t, A2_val, "o", markersize=7)
+            ax.plot(A2_t, A2_val, "o", markersize=7)
     
         # G1/G2
-        if G1 is not None:
+        #if G1 is not None:
             #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            ax.plot(G1["t"], G1["val"], "s", markersize=7)
+            #ax.plot(G1["t"], G1["val"], "s", markersize=7)
     
-        if G2 is not None:
+        #if G2 is not None:
             #ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            ax.plot(G2["t"], G2["val"], "s", markersize=7)
+            #ax.plot(G2["t"], G2["val"], "s", markersize=7)
     
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
