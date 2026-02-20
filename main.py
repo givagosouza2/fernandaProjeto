@@ -23,7 +23,7 @@ fc_gyro = 1.5
 k_states = 7
 
 # Regra Markov
-n_baseline = 15
+n_baseline = 25
 n_after = 10
 
 # Baselines (definição do usuário)
