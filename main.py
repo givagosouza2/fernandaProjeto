@@ -24,13 +24,13 @@ k_states = 7
 
 # Regra Markov
 n_baseline = 15
-n_after = 5
+n_after = 10
 
 # Baselines (definição do usuário)
 bs_start_t0 = 2  # baseline início: 2s
 bs_start_t1 = 5   # até 5s
-bs_end_back0 = 6.5  # baseline final: fim-4s
-bs_end_back1 = 5.5  # até fim-2s
+bs_end_back0 = 4  # baseline final: fim-4s
+bs_end_back1 = 2  # até fim-2s
 
 # Janelas dos picos de aceleração (A1 e A2)
 peak_window_seconds = 1.25  # 2 segundos
