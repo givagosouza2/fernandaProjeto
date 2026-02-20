@@ -170,7 +170,7 @@ if run and acc_file and gyro_file:
     # BASELINE FINAL (entre -4s e -2s)
     # -----------------------------
     t_end = t_gyr_u[-1]
-    mask_end_baseline = (t_gyr_u >= (t_end - 4.0)) & (t_gyr_u <= (t_end - 2.0))
+    mask_end_baseline = (t_gyr_u >= (t_end - 5.0)) & (t_gyr_u <= (t_end - 3.0))
 
     if mask_end_baseline.sum() < 20:
         st.warning("Poucas amostras na baseline final.")
