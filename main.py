@@ -14,9 +14,7 @@ from sklearn.cluster import KMeans
 # -----------------------------
 st.set_page_config(page_title="IMU Markov + Métricas (A1/A2/G1/G2)", layout="wide")
 st.title(
-    "📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim → "
-    "A1=max(||acel||) em (início→início+2s), A2=max(||acel||) em (fim−2s→fim), "
-    "G1/G2=2 maiores picos do giro (por amplitude) rotulados por ordem temporal + tabela"
+    "Análise Fernanda"
 )
 
 fs_target = 100.0
@@ -25,7 +23,7 @@ fc_gyro = 1.5
 k_states = 7
 
 # Regra Markov
-n_baseline = 15
+n_baseline = 10
 n_after = 5
 
 # Baselines (definição do usuário)
