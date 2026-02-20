@@ -29,8 +29,8 @@ n_after = 5
 # Baselines (definição do usuário)
 bs_start_t0 = 2  # baseline início: 2s
 bs_start_t1 = 5   # até 5s
-bs_end_back0 = 6 # baseline final: fim-4s
-bs_end_back1 = 5  # até fim-2s
+bs_end_back0 = 4 # baseline final: fim-4s
+bs_end_back1 = 2  # até fim-2s
 
 # Janelas dos picos de aceleração (A1 e A2)
 peak_window_seconds = 1.25  # 2 segundos
