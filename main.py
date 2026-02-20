@@ -221,100 +221,38 @@ if run:
     # -------------------------------------------------
     col1, col2 = st.columns(2)
     with col1:
-        fig, ax = plt.subplots(figsize=(12, 5))
+        fig,ax=plt.subplots(figsize=(12,5))
+        ax.plot(t_gyr_u,gyr_norm,"-k")
+        #ax.plot(t_gyr_u,acc_norm,label="||acel||")
     
-        ax.plot(t_gyr_u, gyr_norm, '-k')
-        #ax.plot(t_gyr_u, acc_norm_on_gyr, label="||acel|| (LP 8 Hz) (alinhada no tempo do gyro)", alpha=0.8)
+        ax.axvline(start,color="green",label="Início ajustado")
+        ax.axvline(end,color="red",label="Fim ajustado")
     
-        # Baselines
-        #ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        #ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+        #if A1_t: ax.axvline(A1_t,color="blue",linestyle=":")
+        #if A2_t: ax.axvline(A2_t,color="purple",linestyle=":")
     
-        # Auto
-        if start_t_auto is not None:
-            ax.axvline(start_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Início AUTO @ {start_t_auto:.3f}s")
-        ax.axvline(test_end_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Fim AUTO @ {test_end_t_auto:.3f}s")
+        if G1: ax.axvline(G1["t"],color="black",linestyle="-.")
+        if G2: ax.axvline(G2["t"],color="black",linestyle="-.")
     
-        # Ajustado
-        if start_t is not None:
-            ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
-        ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
-        #if A1_win0_t is not None and A1_win1_t is not None:
-        #    ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (0–2s)")
-        #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
-    
-        # A1/A2
-        #if A1_t is not None:
-        #    ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-        #    ax.plot(A1_t, A1_val, "o", markersize=7)
-    
-        #if A2_t is not None:
-        #    ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-        #    ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
-        if G1 is not None:
-            #ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
-        if G2 is not None:
-            #ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
-        ax.set_xlabel("Tempo (s)")
-        ax.set_ylabel("Norma velocidade angular")
-        #ax.grid(True, alpha=0.3)
         #ax.legend()
+        #ax.grid()
         st.pyplot(fig)
     with col2:
-        fig, ax = plt.subplots(figsize=(12, 5))
+        fig,ax=plt.subplots(figsize=(12,5))
+        #ax.plot(t_gyr_u,gyr_norm,label="||giro||")
+        ax.plot(t_gyr_u,acc_norm,label="||acel||")
     
-        #ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
-        ax.plot(t_gyr_u, acc_norm_on_gyr, '-k')
+        ax.axvline(start,color="green",label="Início ajustado")
+        ax.axvline(end,color="red",label="Fim ajustado")
     
-        # Baselines
-        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
+        if A1_t: ax.axvline(A1_t,color="blue",linestyle=":")
+        if A2_t: ax.axvline(A2_t,color="purple",linestyle=":")
     
-        # Auto
-        if start_t_auto is not None:
-            ax.axvline(start_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Início AUTO @ {start_t_auto:.3f}s")
-        ax.axvline(test_end_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Fim AUTO @ {test_end_t_auto:.3f}s")
+        #if G1: ax.axvline(G1["t"],color="black",linestyle="-.")
+        #if G2: ax.axvline(G2["t"],color="black",linestyle="-.")
     
-        # Ajustado
-        if start_t is not None:
-            ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
-        ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
-        #if A1_win0_t is not None and A1_win1_t is not None:
-        #    ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (0–2s)")
-        #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (−2–0s)")
-    
-        # A1/A2
-        if A1_t is not None:
-            #ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-            ax.plot(A1_t, A1_val, "o", markersize=7)
-    
-        if A2_t is not None:
-            #ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-            ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
-        #if G1 is not None:
-        #    ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-        #    ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
-        #if G2 is not None:
-        #    ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-        #    ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
-        ax.set_xlabel("Tempo (s)")
-        ax.set_ylabel("Norma Aceleração linear")
-        #ax.grid(True, alpha=0.3)
-        #ax.legend()
+        ax.legend()
+        ax.grid()
         st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
