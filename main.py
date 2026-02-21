@@ -521,7 +521,7 @@ if run:
         fig, ax = plt.subplots(figsize=(12, 5))
     
         #ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
-        ax.plot(t_acc_u, acc_norm_on_gyr,"-k")
+        ax.plot(t_gyr_u, acc_norm_on_gyr,"-k")
     
         # Baselines
         ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
