@@ -14,7 +14,7 @@ from sklearn.cluster import KMeans
 st.set_page_config(page_title="IMU Markov + Métricas (A1/A2/G1/G2)", layout="wide")
 st.title(
     "📱 IMU: detrend → 100 Hz → filtros → norma → K-means(7) → início/fim → "
-    "A1=max(||acel||) em (início→início+2s), A2=max(||acel||) em (fim−2s→fim), "
+    "A1=max(||acel||) em (início→início+1.5s), A2=max(||acel||) em (fim−1.5s→fim), "
     "G1/G2=2 maiores picos do giro (por amplitude) rotulados por ordem temporal + tabela + ajuste manual Δ"
 )
 
@@ -34,7 +34,7 @@ bs_end_back0 = 4.0  # baseline final: fim-4s
 bs_end_back1 = 2.0  # até fim-2s
 
 # Janelas dos picos de aceleração (A1 e A2)
-peak_window_seconds = 2.0  # 2 segundos
+peak_window_seconds = 1.5  # <<< CORREÇÃO: 1.5 segundos
 
 
 # -----------------------------
@@ -361,11 +361,11 @@ if run:
         test_end_idx, test_end_t = test_end_idx_auto, test_end_t_auto
 
     # -----------------------------
-    # A1 e A2 como MÁXIMO da norma de aceleração nas janelas (CORRIGIDO)
+    # A1 e A2 como MÁXIMO da norma de aceleração nas janelas (início→+1.5s e fim−1.5s→fim)
     # -----------------------------
     acc_norm_on_gyr = np.interp(t_gyr_u, t_acc_u, acc_norm)
 
-    # Janela A1: início ajustado → início ajustado + 2s
+    # Janela A1: início ajustado → início ajustado + 1.5s
     A1_idx = A1_t = A1_val = None
     A1_win0_t = A1_win1_t = None
 
@@ -382,7 +382,7 @@ if run:
         if A1_idx is not None:
             A1_t = float(t_gyr_u[A1_idx])
 
-    # Janela A2: fim ajustado − 2s → fim ajustado
+    # Janela A2: fim ajustado − 1.5s → fim ajustado
     A2_idx = A2_t = A2_val = None
     A2_win1_t = float(test_end_t)
     A2_win0_t = float(max(0.0, test_end_t - peak_window_seconds))
@@ -486,10 +486,10 @@ if run:
         ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
     ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
 
-    # Janelas de A1 e A2 (CORRIGIDO)
+    # Janelas de A1 e A2
     if A1_win0_t is not None and A1_win1_t is not None:
-        ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (início→início+2s)")
-    ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (fim−2s→fim)")
+        ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (início→início+1.5s)")
+    ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (fim−1.5s→fim)")
 
     # A1/A2
     if A1_t is not None:
