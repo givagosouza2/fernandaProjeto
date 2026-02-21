@@ -520,8 +520,8 @@ if run:
         st.subheader("📈 Normas + marcações (auto vs ajustado, A1/A2/G1/G2)")
         fig, ax = plt.subplots(figsize=(12, 5))
     
-        ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
-        ax.plot(t_gyr_u, acc_norm_on_gyr, label="||acel|| (LP 8 Hz) (alinhada no tempo do gyro)", alpha=0.8)
+        #ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
+        ax.plot(t_acc_u, acc_norm_on_gyr,"-k")
     
         # Baselines
         ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
@@ -552,18 +552,16 @@ if run:
             ax.plot(A2_t, A2_val, "o", markersize=7)
     
         # G1/G2
-        if G1 is not None:
-            ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-            ax.plot(G1["t"], G1["val"], "s", markersize=7)
+        #if G1 is not None:
+        #    ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
+        #    ax.plot(G1["t"], G1["val"], "s", markersize=7)
     
-        if G2 is not None:
-            ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-            ax.plot(G2["t"], G2["val"], "s", markersize=7)
+        #if G2 is not None:
+        #    ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
+        #    ax.plot(G2["t"], G2["val"], "s", markersize=7)
     
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
-        ax.grid(True, alpha=0.3)
-        ax.legend()
         st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
