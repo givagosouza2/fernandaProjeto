@@ -19,7 +19,7 @@ fc_acc = 8.0
 fc_gyro = 1.5
 k_states = 7
 
-peak_window = 2.0  # segundos
+peak_window = 1.5  # segundos
 
 
 # -------------------------------------------------
@@ -253,13 +253,4 @@ if run:
     
         st.pyplot(fig)
 
-    with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
-        out = pd.DataFrame(
-            {
-                "t_s": t_gyr_u,
-                "gyr_norm": gyr_norm,
-                "acc_norm": acc_norm_on_gyr,
-                "state": states.astype(int),
-            }
-        )
-        st.dataframe(out, use_container_width=True)
+    
