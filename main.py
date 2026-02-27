@@ -41,7 +41,7 @@ peak_window_seconds = 0.75  # <<< CORREÇÃO: 1.5 segundos
 # Helpers
 # -----------------------------
 def read_imu_file(uploaded_file) -> pd.DataFrame:
-    df = pd.read_csv(uploaded_file, sep=None, engine="python", encoding_errors="ignore")
+    df = pd.read_csv(uploaded_file, sep=r"[,\s;]+", engine="python", encoding_errors="ignore")
     df.columns = [c.strip().lower() for c in df.columns]
 
     rename = {}
