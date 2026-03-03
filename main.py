@@ -1,4 +1,8 @@
 # app.py
+import io
+import re
+import unicodedata
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -28,49 +32,150 @@ n_baseline = 15
 n_after = 5
 
 # Baselines (definição do usuário)
-bs_start_t0 = 1   # baseline início: 2s
-bs_start_t1 = 2   # até 5s
-bs_end_back0 = 2  # baseline final: fim-4s
-bs_end_back1 = 1  # até fim-2s
+bs_start_t0 = 1   # baseline início: 2s (seu comentário diz 2–5s, mas aqui está 1–2; mantive como estava)
+bs_start_t1 = 2
+bs_end_back0 = 2  # baseline final: fim-4s (mantido como estava)
+bs_end_back1 = 1
 
 # Janelas dos picos de aceleração (A1 e A2)
-peak_window_seconds = 0.75  # <<< CORREÇÃO: 1.5 segundos
+peak_window_seconds = 1.5  # <<< CORREÇÃO: 1.5 segundos
 
 
 # -----------------------------
 # Helpers
 # -----------------------------
+def _strip_accents(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+def _norm_colname(c: str) -> str:
+    """
+    Normaliza nomes de colunas com unidades e caracteres especiais.
+    Ex.: 'Tempo (ms)' -> 'tempo ms' -> 'tempoms' (após limpeza).
+    """
+    c = c.strip().lower()
+    c = _strip_accents(c)
+    # troca símbolos comuns
+    c = c.replace("²", "2").replace("^2", "2")
+    # remove tudo que não for letra/número
+    c = re.sub(r"[^a-z0-9]+", "", c)
+    return c
+
+def _first_numeric_row_index(text: str, min_cols: int = 4) -> int:
+    """
+    Acha a primeira linha que pareça conter pelo menos `min_cols` números.
+    Útil se houver cabeçalho "grande".
+    """
+    lines = text.splitlines()
+    num_pat = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+    for i, line in enumerate(lines):
+        nums = num_pat.findall(line.replace(",", "."))
+        if len(nums) >= min_cols:
+            return i
+    return 0
+
 def read_imu_file(uploaded_file) -> pd.DataFrame:
-    df = pd.read_csv(uploaded_file, sep=r"[,\s;]+", engine="python", encoding_errors="ignore")
-    df.columns = [c.strip().lower() for c in df.columns]
+    """
+    Lê TXT/CSV como os seus anexos:
+      - separador ';' (principal), ou ','/tab/whitespace (fallback)
+      - cabeçalhos com unidades (Tempo (ms), Gyro X (rad/s), Acc X (m/s²), etc.)
+      - retorna DataFrame padronizado: t(s), x, y, z
+    """
+    raw = uploaded_file.read()
+    # garante que dá para reler o mesmo upload em outros trechos (streamlit às vezes precisa)
+    uploaded_file.seek(0)
 
-    rename = {}
-    for c in df.columns:
-        if c in ["tempo", "time", "t"]:
-            rename[c] = "t"
-        elif c in ["x", "ax", "gx"]:
-            rename[c] = "x"
-        elif c in ["y", "ay", "gy"]:
-            rename[c] = "y"
-        elif c in ["z", "az", "gz"]:
-            rename[c] = "z"
-    df = df.rename(columns=rename)
+    # decodificação robusta
+    text = raw.decode("utf-8", errors="ignore")
+    # recorta para começar da primeira linha numérica (se houver lixo antes)
+    i0 = _first_numeric_row_index(text, min_cols=4)
+    if i0 > 0:
+        text = "\n".join(text.splitlines()[i0 - 1:])  # inclui 1 linha antes (provável header)
 
-    missing = [c for c in ["t", "x", "y", "z"] if c not in df.columns]
-    if missing:
-        raise ValueError(f"Colunas ausentes: {missing}. Encontrei: {list(df.columns)}")
+    # tenta primeiro ';' (seus arquivos estão assim)
+    buf = io.StringIO(text)
+    try:
+        df = pd.read_csv(buf, sep=";", engine="python")
+    except Exception:
+        buf = io.StringIO(text)
+        df = pd.read_csv(buf, sep=r"[,\s\t;]+", engine="python")
 
-    for c in ["t", "x", "y", "z"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # se veio com 1 coluna (falhou separar), tenta regex geral
+    if df.shape[1] < 4:
+        buf = io.StringIO(text)
+        df = pd.read_csv(buf, sep=r"[,\s\t;]+", engine="python")
 
-    df = df.dropna(subset=["t", "x", "y", "z"]).reset_index(drop=True)
-    return df[["t", "x", "y", "z"]]
+    # normaliza nomes
+    original_cols = list(df.columns)
+    norm = [_norm_colname(c) for c in original_cols]
+
+    # mapeia tempo
+    t_idx = None
+    for i, nc in enumerate(norm):
+        if nc in ("t", "time", "tempo", "tempoms", "temposeg", "temposec", "timestamp", "millis", "ms"):
+            t_idx = i
+            break
+        # pega "tempo" + "ms" mesmo com unidades
+        if nc.startswith("tempo"):
+            t_idx = i
+            break
+
+    # identifica x/y/z por padrões (gyro/acc + eixo)
+    axis_map = {"x": None, "y": None, "z": None}
+    for i, nc in enumerate(norm):
+        if t_idx is not None and i == t_idx:
+            continue
+        # exemplos após normalização:
+        # 'gyroxrads', 'accxm s2' -> vira 'accxms2'
+        if nc.endswith("x") or "x" == nc[-1]:
+            if ("accx" in nc) or ("gyrox" in nc) or (nc.endswith("x")):
+                if axis_map["x"] is None:
+                    axis_map["x"] = i
+        if nc.endswith("y") or "y" == nc[-1]:
+            if ("accy" in nc) or ("gyroy" in nc) or (nc.endswith("y")):
+                if axis_map["y"] is None:
+                    axis_map["y"] = i
+        if nc.endswith("z") or "z" == nc[-1]:
+            if ("accz" in nc) or ("gyroz" in nc) or (nc.endswith("z")):
+                if axis_map["z"] is None:
+                    axis_map["z"] = i
+
+    # fallback: se não conseguiu x/y/z pelo nome, pega as 3 colunas numéricas após o tempo
+    if t_idx is None:
+        # assume primeira coluna é tempo
+        t_idx = 0
+
+    if any(axis_map[a] is None for a in ("x", "y", "z")):
+        candidates = [i for i in range(df.shape[1]) if i != t_idx]
+        if len(candidates) >= 3:
+            axis_map["x"], axis_map["y"], axis_map["z"] = candidates[:3]
+
+    if any(axis_map[a] is None for a in ("x", "y", "z")):
+        raise ValueError(
+            f"Cinêmica: esperado >=3 colunas numéricas (X,Y,Z). "
+            f"Detectei {df.shape[1]} colunas: {list(df.columns)}"
+        )
+
+    # monta df padronizado
+    t_raw = pd.to_numeric(df.iloc[:, t_idx], errors="coerce")
+    x_raw = pd.to_numeric(df.iloc[:, axis_map["x"]], errors="coerce")
+    y_raw = pd.to_numeric(df.iloc[:, axis_map["y"]], errors="coerce")
+    z_raw = pd.to_numeric(df.iloc[:, axis_map["z"]], errors="coerce")
+
+    out = pd.DataFrame({"t": t_raw, "x": x_raw, "y": y_raw, "z": z_raw}).dropna().reset_index(drop=True)
+    if out.empty:
+        raise ValueError(
+            "Após conversão numérica, não sobrou nenhuma linha válida. "
+            "Verifique separador e cabeçalho do arquivo."
+        )
+    return out[["t", "x", "y", "z"]]
 
 
 def normalize_time_to_seconds(t_raw: np.ndarray) -> np.ndarray:
     t = np.asarray(t_raw, dtype=float)
     t = t - t[0]
     span = np.nanmax(t) - np.nanmin(t)
+    # seus arquivos estão em ms (ex.: 0, 20, 38...) :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
     if span > 1000.0:
         t = t / 1000.0
     return t
@@ -147,10 +252,6 @@ def last_index_leq(t: np.ndarray, value: float) -> int:
 
 
 def two_largest_peaks_global(y: np.ndarray, t: np.ndarray, fs: float, min_dist_s: float, prom_mult: float):
-    """
-    Encontra os DOIS maiores picos locais de y (por amplitude).
-    Retorna lista de dicts [{"idx","t","val","prom"}, ...] ordenada por val desc.
-    """
     min_distance = max(1, int(min_dist_s * fs))
     local_std = float(np.std(y)) if len(y) > 3 else 0.0
     min_prominence = max(prom_mult * local_std, 1e-9)
@@ -179,7 +280,6 @@ def two_largest_peaks_global(y: np.ndarray, t: np.ndarray, fs: float, min_dist_s
 
 
 def window_max(y: np.ndarray, idx0: int, idx1: int):
-    """Retorna (idx_max, val_max) do máximo em y[idx0:idx1+1]."""
     idx0 = int(max(0, idx0))
     idx1 = int(min(len(y) - 1, idx1))
     if idx0 > idx1:
@@ -201,7 +301,6 @@ st.sidebar.header("Parâmetros")
 
 seed = st.sidebar.number_input("Seed (K-means)", min_value=0, max_value=999999, value=42, step=1)
 
-# Picos do giro (global, pega os 2 maiores por amplitude)
 gyro_min_peak_distance_s = st.sidebar.slider("Giro: distância mínima entre picos (s)", 0.05, 2.00, 0.50, 0.05)
 gyro_prom_mult = st.sidebar.slider("Giro: proeminência mínima (mult. do desvio-padrão do sinal)", 0.0, 3.0, 0.3, 0.1)
 
@@ -282,13 +381,13 @@ if run:
     states, centers_ord = ordered_states_from_kmeans(gyr_norm, k_states, int(seed))
 
     # -----------------------------
-    # Início automático: baseline 2–5s e leitura começa em 2s
+    # Início automático: baseline 2–5s e leitura começa em 2s (mantive lógica do seu código)
     # -----------------------------
     i_bs0 = first_index_geq(t_gyr_u, bs_start_t0)
     i_bs1 = last_index_leq(t_gyr_u, bs_start_t1)
 
     if i_bs1 <= i_bs0 or (i_bs1 - i_bs0 + 1) < 20:
-        st.warning("Baseline inicial (2–5s) curta; usando primeiros 300 pontos como fallback.")
+        st.warning("Baseline inicial curta; usando primeiros 300 pontos como fallback.")
         baseline_state_start = mode_int(states[:min(len(states), 300)])
     else:
         baseline_state_start = mode_int(states[i_bs0:i_bs1 + 1])
@@ -312,7 +411,7 @@ if run:
     i_be1 = last_index_leq(t_gyr_u, tb1)
 
     if i_be1 <= i_be0 or (i_be1 - i_be0 + 1) < 20:
-        st.warning("Baseline final (fim−4 a fim−2) curta; usando últimos 300 pontos como fallback.")
+        st.warning("Baseline final curta; usando últimos 300 pontos como fallback.")
         baseline_state_end = mode_int(states[max(0, len(states) - 300):])
         i_be1 = len(states) - 1
     else:
@@ -328,7 +427,7 @@ if run:
     end_idx_auto = None if end_idx_rev is None else (i_be1 - end_idx_rev)
     end_t_auto = None if end_idx_auto is None else float(t_gyr_u[end_idx_auto])
 
-    # Fim do teste automático: se detectou end_idx_auto, usa ele; senão, usa fim do registro
+    # Fim do teste automático
     if end_idx_auto is not None:
         test_end_t_auto = float(t_gyr_u[end_idx_auto])
         test_end_idx_auto = int(end_idx_auto)
@@ -353,10 +452,8 @@ if run:
         test_end_idx = int(np.searchsorted(t_gyr_u, test_end_t, side="left"))
         test_end_idx = int(clamp(test_end_idx, 0, len(t_gyr_u) - 1))
 
-    # Garantia: início < fim (se inverter, corrige automaticamente)
     if (start_t is not None) and (test_end_t is not None) and (start_t >= test_end_t):
         st.error("Ajuste inválido: início ajustado ficou >= fim ajustado. Reajustei automaticamente.")
-        # volta para automático
         start_idx, start_t = start_idx_auto, start_t_auto
         test_end_idx, test_end_t = test_end_idx_auto, test_end_t_auto
 
@@ -365,7 +462,6 @@ if run:
     # -----------------------------
     acc_norm_on_gyr = np.interp(t_gyr_u, t_acc_u, acc_norm)
 
-    # Janela A1: início ajustado → início ajustado + 1.5s
     A1_idx = A1_t = A1_val = None
     A1_win0_t = A1_win1_t = None
 
@@ -382,7 +478,6 @@ if run:
         if A1_idx is not None:
             A1_t = float(t_gyr_u[A1_idx])
 
-    # Janela A2: fim ajustado − 1.5s → fim ajustado
     A2_idx = A2_t = A2_val = None
     A2_win1_t = float(test_end_t)
     A2_win0_t = float(max(0.0, test_end_t - peak_window_seconds))
@@ -397,7 +492,6 @@ if run:
 
     # -----------------------------
     # Picos do giroscópio: dois maiores por amplitude -> rotular por ordem temporal
-    # G1 = o que ocorre primeiro; G2 = o que ocorre por último
     # -----------------------------
     gyro_top2_amp = two_largest_peaks_global(
         y=gyr_norm,
@@ -415,22 +509,18 @@ if run:
         G1 = gyro_top2_amp[0]
 
     # -----------------------------
-    # Métricas solicitadas (tabela)
+    # Métricas (tabela)
     # -----------------------------
     dur_mov = dur_levantar = dur_ida = dur_volta = dur_sentar = None
 
     if (start_t is not None) and (test_end_t is not None):
         dur_mov = test_end_t - start_t
-
     if (A1_t is not None) and (start_t is not None):
         dur_levantar = A1_t - start_t
-
     if (G1 is not None) and (A1_t is not None):
         dur_ida = G1["t"] - A1_t
-
     if (G2 is not None) and (G1 is not None):
         dur_volta = G2["t"] - G1["t"]
-
     if (test_end_t is not None) and (A2_t is not None):
         dur_sentar = test_end_t - A2_t
 
@@ -466,102 +556,65 @@ if run:
     # -----------------------------
     # Plot
     # -----------------------------
-    col1,col2 = st.columns(2)
+    col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📈 Normas + marcações (auto vs ajustado, A1/A2/G1/G2)")
+        st.subheader("📈 ||giro|| + marcações")
         fig, ax = plt.subplots(figsize=(12, 5))
-    
-        ax.plot(t_gyr_u, gyr_norm, '-k')
-        #ax.plot(t_gyr_u, acc_norm_on_gyr, label="||acel|| (LP 8 Hz) (alinhada no tempo do gyro)", alpha=0.8)
-    
-        # Baselines
-        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
-    
-        # Auto
+        ax.plot(t_gyr_u, gyr_norm, "-k")
+
+        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início")
+        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final")
+
         if start_t_auto is not None:
             ax.axvline(start_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Início AUTO @ {start_t_auto:.3f}s")
         ax.axvline(test_end_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Fim AUTO @ {test_end_t_auto:.3f}s")
-    
-        # Ajustado
+
         if start_t is not None:
             ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
         ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
-        #if A1_win0_t is not None and A1_win1_t is not None:
-        #    ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (início→início+1.5s)")
-        #ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (fim−1.5s→fim)")
-    
-        # A1/A2
-        #if A1_t is not None:
-        #    ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
-        #    ax.plot(A1_t, A1_val, "o", markersize=7)
-    
-        #if A2_t is not None:
-        #    ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
-        #    ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
+
         if G1 is not None:
             ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
             ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
         if G2 is not None:
             ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
             ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
+
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
-        #ax.grid(True, alpha=0.3)
-        #ax.legend()
+        ax.set_xlim(float(t_gyr_u[0]), float(t_gyr_u[-1]))
         st.pyplot(fig)
+
     with col2:
-        st.subheader("📈 Normas + marcações (auto vs ajustado, A1/A2/G1/G2)")
+        st.subheader("📈 ||acel|| + marcações")
         fig, ax = plt.subplots(figsize=(12, 5))
-    
-        #ax.plot(t_gyr_u, gyr_norm, label="||giro|| (LP 1.5 Hz)")
-        ax.plot(t_gyr_u, acc_norm_on_gyr,"-k")
-    
-        # Baselines
-        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início (2–5s)")
-        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final (fim−4 a fim−2)")
-    
-        # Auto
+        ax.plot(t_gyr_u, acc_norm_on_gyr, "-k")
+
+        ax.axvspan(bs_start_t0, bs_start_t1, alpha=0.12, label="baseline início")
+        ax.axvspan(t_end_record - bs_end_back0, t_end_record - bs_end_back1, alpha=0.12, label="baseline final")
+
         if start_t_auto is not None:
             ax.axvline(start_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Início AUTO @ {start_t_auto:.3f}s")
         ax.axvline(test_end_t_auto, linestyle="--", alpha=0.4, linewidth=2, label=f"Fim AUTO @ {test_end_t_auto:.3f}s")
-    
-        # Ajustado
+
         if start_t is not None:
             ax.axvline(start_t, linestyle="-", linewidth=2, label=f"Início AJUST. @ {start_t:.3f}s")
         ax.axvline(test_end_t, linestyle="-", linewidth=2, label=f"Fim AJUST. @ {test_end_t:.3f}s")
-    
-        # Janelas de A1 e A2
+
         if A1_win0_t is not None and A1_win1_t is not None:
-            ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (início→início+1.5s)")
+            ax.axvspan(A1_win0_t, A1_win1_t, alpha=0.10, label="janela A1 (início→+1.5s)")
         ax.axvspan(A2_win0_t, A2_win1_t, alpha=0.10, label="janela A2 (fim−1.5s→fim)")
-    
-        # A1/A2
+
         if A1_t is not None:
             ax.axvline(A1_t, linestyle=":", linewidth=2, label=f"A1 (max) @ {A1_t:.3f}s")
             ax.plot(A1_t, A1_val, "o", markersize=7)
-    
         if A2_t is not None:
             ax.axvline(A2_t, linestyle=":", linewidth=2, label=f"A2 (max) @ {A2_t:.3f}s")
             ax.plot(A2_t, A2_val, "o", markersize=7)
-    
-        # G1/G2
-        #if G1 is not None:
-        #    ax.axvline(G1["t"], linestyle="-.", linewidth=2, label=f"G1 @ {G1['t']:.3f}s")
-        #    ax.plot(G1["t"], G1["val"], "s", markersize=7)
-    
-        #if G2 is not None:
-        #    ax.axvline(G2["t"], linestyle="-.", linewidth=2, label=f"G2 @ {G2['t']:.3f}s")
-        #    ax.plot(G2["t"], G2["val"], "s", markersize=7)
-    
+
         ax.set_xlabel("Tempo (s)")
         ax.set_ylabel("Norma")
+        ax.set_xlim(float(t_gyr_u[0]), float(t_gyr_u[-1]))
         st.pyplot(fig)
 
     with st.expander("Ver tabela processada (tempo do gyro, 100 Hz)"):
